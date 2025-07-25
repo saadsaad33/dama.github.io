@@ -33,7 +33,6 @@
             box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
         }
 
-        /* Left Panel - Game Board */
         .board-container {
             flex: 3;
             padding: 25px;
@@ -244,7 +243,6 @@
             background: #c0392b;
         }
 
-        /* Right Panel - Game Info */
         .info-panel {
             flex: 1;
             background: rgba(20, 20, 30, 0.95);
@@ -423,14 +421,14 @@
         <!-- Left Panel - Game Board -->
         <div class="board-container">
             <div class="board-header">
-                <div class="player-info active" id="white-player">
+                <div class="player-info" id="white-player">
                     <div class="player-avatar">W</div>
                     <div class="player-details">
                         <h3>Player 1</h3>
                         <p>White Pieces</p>
                     </div>
                 </div>
-                <div class="player-info" id="red-player">
+                <div class="player-info active" id="red-player">
                     <div class="player-avatar">R</div>
                     <div class="player-details">
                         <h3>Player 2</h3>
@@ -501,11 +499,10 @@
                 <div class="instructions">
                     <ul>
                         <li><span class="highlight">Red moves first</span> - Click on a piece to select it</li>
-                        <li>Move diagonally forward to an adjacent empty square</li>
+                        <li>Regular pieces move diagonally forward one square</li>
+                        <li><span class="highlight">Kings can move any distance diagonally</span> (like a bishop in chess)</li>
                         <li><span class="highlight">Jump over opponent pieces</span> to capture them</li>
-                        <li>Kings (_pieces with crowns) can move and capture in any diagonal direction</li>
                         <li>When a piece reaches the opposite end, it becomes a <span class="highlight">King</span></li>
-                        <li>Capture as many pieces as possible in one turn if available</li>
                     </ul>
                 </div>
             </div>
@@ -517,14 +514,12 @@
             // Game constants
             const ROWS = 8;
             const COLS = 8;
-            const DARK_SQUARE = '#b58863';
-            const LIGHT_SQUARE = '#f0d9b5';
             
             // Game state
             let board = [];
             let selectedPiece = null;
             let validMoves = {};
-            let turn = 'red'; // 'red' or 'white'
+            let turn = 'red';
             let redPieces = 12;
             let whitePieces = 12;
             let moveCount = 0;
@@ -544,7 +539,7 @@
             const undoBtn = document.getElementById('undoBtn');
             const redPlayer = document.getElementById('red-player');
             const whitePlayer = document.getElementById('white-player');
-            
+
             // Initialize the game
             function initGame() {
                 createBoard();
@@ -662,7 +657,7 @@
                     return;
                 }
                 
-                // Select a piece if it's the player's turn
+                // Select a piece if it's the player's turn and matches the current turn
                 if (piece && piece.color === turn) {
                     selectPiece(row, col);
                 }
@@ -691,47 +686,155 @@
                 const directions = [];
                 
                 // Determine movement directions based on piece type
-                if (piece.color === 'red' || piece.king) {
+                if (piece.king) {
+                    // Kings can move in all four diagonal directions
+                    directions.push([1, -1], [1, 1], [-1, -1], [-1, 1]);
+                } else if (piece.color === 'red') {
                     directions.push([1, -1], [1, 1]); // Down-left, Down-right
-                }
-                if (piece.color === 'white' || piece.king) {
+                } else {
                     directions.push([-1, -1], [-1, 1]); // Up-left, Up-right
                 }
                 
-                // Check simple moves
-                for (const [dr, dc] of directions) {
-                    const newRow = row + dr;
-                    const newCol = col + dc;
-                    
-                    // Check if within board boundaries
-                    if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
-                        // Check if square is empty
-                        if (!board[newRow][newCol]) {
-                            moves[`${newRow},${newCol}`] = []; // No captures
-                        }
-                    }
+                // Check for capture moves first (they take priority)
+                const captureMoves = calculateCaptureMoves(row, col, piece, directions);
+                if (Object.keys(captureMoves).length > 0) {
+                    return captureMoves;
                 }
                 
-                // Check capture moves
-                for (const [dr, dc] of directions) {
-                    const jumpRow = row + dr * 2;
-                    const jumpCol = col + dc * 2;
-                    const midRow = row + dr;
-                    const midCol = col + dc;
-                    
-                    // Check if jump position is within board
-                    if (jumpRow >= 0 && jumpRow < ROWS && jumpCol >= 0 && jumpCol < COLS) {
-                        // Check if middle square has opponent piece and jump square is empty
-                        const midPiece = board[midRow][midCol];
-                        const jumpSquare = board[jumpRow][jumpCol];
+                // If no captures available, check regular moves
+                if (piece.king) {
+                    // King can move any number of squares diagonally
+                    for (const [dr, dc] of directions) {
+                        let newRow = row + dr;
+                        let newCol = col + dc;
                         
-                        if (midPiece && midPiece.color !== piece.color && !jumpSquare) {
-                            moves[`${jumpRow},${jumpCol}`] = [{row: midRow, col: midCol}]; // Captured piece
+                        while (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                            if (board[newRow][newCol]) {
+                                break; // Stop if we hit another piece
+                            }
+                            
+                            moves[`${newRow},${newCol}`] = [];
+                            newRow += dr;
+                            newCol += dc;
+                        }
+                    }
+                } else {
+                    // Regular pieces can only move one square
+                    for (const [dr, dc] of directions) {
+                        const newRow = row + dr;
+                        const newCol = col + dc;
+                        
+                        // Check if within board boundaries
+                        if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                            // Check if square is empty
+                            if (!board[newRow][newCol]) {
+                                moves[`${newRow},${newCol}`] = []; // No captures
+                            }
                         }
                     }
                 }
                 
                 return moves;
+            }
+            
+            // Calculate capture moves for a piece
+            function calculateCaptureMoves(row, col, piece, directions) {
+                const moves = {};
+                
+                for (const [dr, dc] of directions) {
+                    if (piece.king) {
+                        // King can capture any distance away
+                        let newRow = row + dr;
+                        let newCol = col + dc;
+                        let captureRow = -1;
+                        let captureCol = -1;
+                        
+                        while (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                            const currentPiece = board[newRow][newCol];
+                            
+                            if (currentPiece) {
+                                if (currentPiece.color === piece.color) {
+                                    break; // Can't jump over own piece
+                                } else if (captureRow === -1) {
+                                    // Found opponent piece to jump over
+                                    captureRow = newRow;
+                                    captureCol = newCol;
+                                } else {
+                                    break; // Can't jump over multiple pieces
+                                }
+                            } else if (captureRow !== -1) {
+                                // Found empty square after opponent piece - valid capture
+                                moves[`${newRow},${newCol}`] = [{row: captureRow, col: captureCol}];
+                            }
+                            
+                            newRow += dr;
+                            newCol += dc;
+                        }
+                    } else {
+                        // Regular piece can only capture adjacent opponent piece
+                        const jumpRow = row + dr * 2;
+                        const jumpCol = col + dc * 2;
+                        const midRow = row + dr;
+                        const midCol = col + dc;
+                        
+                        // Check if jump position is within board
+                        if (jumpRow >= 0 && jumpRow < ROWS && jumpCol >= 0 && jumpCol < COLS) {
+                            // Check if middle square has opponent piece and jump square is empty
+                            const midPiece = board[midRow][midCol];
+                            const jumpSquare = board[jumpRow][jumpCol];
+                            
+                            if (midPiece && midPiece.color !== piece.color && !jumpSquare) {
+                                moves[`${jumpRow},${jumpCol}`] = [{row: midRow, col: midCol}]; // Captured piece
+                            }
+                        }
+                    }
+                }
+                
+                return moves;
+            }
+            
+            // Get all possible captures for a player
+            function getAllPossibleCaptures(playerColor) {
+                const captures = [];
+                
+                for (let row = 0; row < ROWS; row++) {
+                    for (let col = 0; col < COLS; col++) {
+                        const piece = board[row][col];
+                        if (piece && piece.color === playerColor) {
+                            const directions = piece.king ? 
+                                [[1, -1], [1, 1], [-1, -1], [-1, 1]] : 
+                                (piece.color === 'red' ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]]);
+                            
+                            const moves = calculateCaptureMoves(row, col, piece, directions);
+                            
+                            // Check if this piece has any capture moves
+                            for (const moveKey in moves) {
+                                if (moves[moveKey].length > 0) {
+                                    captures.push({
+                                        piece: { row, col },
+                                        capture: moves[moveKey][0]
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return captures;
+            }
+            
+            // Check if a piece can make additional captures from its new position
+            function canPieceCaptureAgain(row, col) {
+                const piece = board[row][col];
+                if (!piece) return false;
+                
+                const directions = piece.king ? 
+                    [[1, -1], [1, 1], [-1, -1], [-1, 1]] : 
+                    (piece.color === 'red' ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]]);
+                
+                const moves = calculateCaptureMoves(row, col, piece, directions);
+                
+                return Object.keys(moves).length > 0;
             }
             
             // Move a piece
@@ -766,14 +869,28 @@
                 moveCount++;
                 
                 // Add to move history
-                const moveNotation = `${String.fromCharCode(97 + fromCol)}${8 - fromRow} → ${String.fromCharCode(97 + toCol)}${8 - toRow}`;
+                const fromNotation = `${String.fromCharCode(97 + fromCol)}${8 - fromRow}`;
+                const toNotation = `${String.fromCharCode(97 + toCol)}${8 - toRow}`;
+                const moveNotation = piece.king ? 
+                    `${fromNotation} → ${toNotation} (King)` : 
+                    `${fromNotation} → ${toNotation}`;
                 addToMoveHistory(moveNotation);
                 
-                // Switch turns
-                turn = turn === 'red' ? 'white' : 'red';
+                // Check if the piece can capture again from its new position
+                const canCaptureAgain = capturedPieces.length > 0 && canPieceCaptureAgain(toRow, toCol);
                 
-                // Deselect piece
-                deselectPiece();
+                if (canCaptureAgain) {
+                    // Keep the same piece selected and only show capture moves
+                    selectedPiece = { row: toRow, col: toCol };
+                    const directions = piece.king ? 
+                        [[1, -1], [1, 1], [-1, -1], [-1, 1]] : 
+                        (piece.color === 'red' ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]]);
+                    validMoves = calculateCaptureMoves(toRow, toCol, piece, directions);
+                } else {
+                    // Switch turns
+                    turn = turn === 'red' ? 'white' : 'red';
+                    deselectPiece();
+                }
                 
                 // Update UI
                 updateGameInfo();
@@ -809,6 +926,7 @@
                     gameActive = true;
                     selectedPiece = null;
                     validMoves = {};
+                    
                     updateGameInfo();
                     renderBoard();
                 }
@@ -854,7 +972,64 @@
                     endGame('white');
                 } else if (whitePieces === 0) {
                     endGame('red');
+                } else {
+                    // Check if current player has any valid moves
+                    const hasValidMoves = playerHasValidMoves(turn);
+                    if (!hasValidMoves) {
+                        endGame(turn === 'red' ? 'white' : 'red');
+                    }
                 }
+            }
+            
+            // Check if player has any valid moves
+            function playerHasValidMoves(playerColor) {
+                for (let row = 0; row < ROWS; row++) {
+                    for (let col = 0; col < COLS; col++) {
+                        const piece = board[row][col];
+                        if (piece && piece.color === playerColor) {
+                            const directions = piece.king ? 
+                                [[1, -1], [1, 1], [-1, -1], [-1, 1]] : 
+                                (piece.color === 'red' ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]]);
+                            
+                            // Check capture moves first
+                            const captureMoves = calculateCaptureMoves(row, col, piece, directions);
+                            if (Object.keys(captureMoves).length > 0) {
+                                return true;
+                            }
+                            
+                            // Check regular moves
+                            const regularMoves = {};
+                            if (piece.king) {
+                                // King can move any number of squares diagonally
+                                for (const [dr, dc] of directions) {
+                                    let newRow = row + dr;
+                                    let newCol = col + dc;
+                                    
+                                    while (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                                        if (board[newRow][newCol]) {
+                                            break; // Stop if we hit another piece
+                                        }
+                                        
+                                        return true; // At least one valid move exists
+                                    }
+                                }
+                            } else {
+                                // Regular pieces
+                                for (const [dr, dc] of directions) {
+                                    const newRow = row + dr;
+                                    const newCol = col + dc;
+                                    
+                                    if (newRow >= 0 && newRow < ROWS && newCol >= 0 && newCol < COLS) {
+                                        if (!board[newRow][newCol]) {
+                                            return true; // At least one valid move exists
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return false;
             }
             
             // End the game
